@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "x-archaeologist"
+version = "0.1.0"
+description = "Find the real earliest activity of any X/Twitter account, verified against independent archives instead of X's own (gappy) search index."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+authors = [
+  { name = "Warsky" }
+]
+keywords = ["twitter", "x", "osint", "wayback-machine", "snowflake-id", "archive", "nitter"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Intended Audience :: Developers",
+  "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
+  "Topic :: Sociology :: History",
+]
+dependencies = [
+  "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-mock>=3", "respx>=0.21"]
+
+[project.scripts]
+x-archaeologist = "x_archaeologist.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
