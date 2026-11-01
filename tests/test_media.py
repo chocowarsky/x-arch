@@ -36,6 +36,9 @@ def test_resolve_avatar_orig():
     url_bigger = "https://pbs.twimg.com/profile_images/123/pic_bigger.png"
     assert resolve_avatar_orig(url_bigger) == "https://pbs.twimg.com/profile_images/123/pic.png"
 
+    url_200 = "https://pbs.twimg.com/profile_images/123/pic_200x200.jpg"
+    assert resolve_avatar_orig(url_200) == "https://pbs.twimg.com/profile_images/123/pic.jpg"
+
 
 def test_resolve_banner_orig():
     url = "https://pbs.twimg.com/profile_banners/1306114022886973440/600x200"

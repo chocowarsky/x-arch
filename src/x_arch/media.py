@@ -78,7 +78,9 @@ def resolve_avatar_orig(url: str) -> str:
 
     parsed = urlparse(url)
     if "twimg.com" in parsed.netloc and "/profile_images/" in parsed.path:
-        new_path = re.sub(r"_(?:normal|bigger|mini)(?=\.[a-zA-Z0-9]+$)", "", parsed.path)
+        new_path = re.sub(
+            r"_(?:normal|bigger|mini|\d+x\d+)(?=\.[a-zA-Z0-9]+$)", "", parsed.path
+        )
         return urlunparse(
             (
                 parsed.scheme,
