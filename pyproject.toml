@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "x-archaeologist"
-version = "0.1.0"
-description = "Find the real earliest activity of any X/Twitter account, verified against independent archives instead of X's own (gappy) search index."
+version = "0.2.0"
+description = "Find the real earliest activity, circadian behavioral rhythms, and uncompressed media of any X/Twitter account, verified against independent archives."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.9"

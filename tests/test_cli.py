@@ -66,3 +66,28 @@ def test_cli_passes_year_filters_through(monkeypatch):
 
     assert captured_kwargs["from_year"] == 2019
     assert captured_kwargs["to_year"] == 2021
+
+
+def test_cli_profile_flag(capsys):
+    exit_code = cli.run(["bevanpramudt", "--profile"])
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "Offline Behavioral & Circadian Profile" in captured.out
+    assert "Estimated Timezone" in captured.out
+
+
+def test_cli_resolve_media(capsys):
+    url = "https://pbs.twimg.com/media/F9abcdef?format=jpg&name=small"
+    exit_code = cli.run(["--resolve-media", url])
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "name=orig" in captured.out
+
+
+def test_cli_clean_url(capsys):
+    url = "https://x.com/user/status/123?s=20&t=abc"
+    exit_code = cli.run(["--clean-url", url])
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "s=" not in captured.out
+    assert "t=" not in captured.out

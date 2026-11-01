@@ -2,8 +2,11 @@
 
 Usage:
     x-archaeologist bevanpramudt
+    x-archaeologist bevanpramudt --profile
     x-archaeologist bevanpramudt --from-year 2018 --json
     x-archaeologist bevanpramudt --with-nitter --nitter-instance https://your-instance.example
+    x-archaeologist --check-email user@example.com
+    x-archaeologist --resolve-media "https://pbs.twimg.com/media/F9abcdef?format=jpg&name=small"
 """
 
 from __future__ import annotations
@@ -12,6 +15,13 @@ import argparse
 import json
 import sys
 
+from .identity import check_email_registered, check_username_available
+from .media import (
+    clean_tracking_params,
+    resolve_avatar_orig,
+    resolve_banner_orig,
+    resolve_orig_image_url,
+)
 from .nitter import fetch_nitter_timeline_ids
 from .report import build_report
 from .wayback import WaybackError, fetch_archived_status_ids
@@ -21,12 +31,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="x-archaeologist",
         description=(
-            "Find the verified earliest archived activity of an X/Twitter "
-            "account, cross-checked against the Wayback Machine instead of "
-            "X's own (gappy) search index."
+            "Find the verified earliest archived activity and behavioral intelligence "
+            "of an X/Twitter account, cross-checked against independent archives "
+            "instead of X's own (gappy) search index."
         ),
     )
-    parser.add_argument("screen_name", help="X handle to look up, without @.")
+    parser.add_argument(
+        "screen_name",
+        nargs="?",
+        default=None,
+        help="X handle to look up, without @.",
+    )
     parser.add_argument(
         "--from-year",
         type=int,
@@ -38,6 +53,17 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help="Only consider archives up to this year.",
+    )
+    parser.add_argument(
+        "--profile",
+        action="store_true",
+        help="Perform offline circadian rhythm, timezone, and dormancy profiling on all recovered IDs.",
+    )
+    parser.add_argument(
+        "--dormancy-days",
+        type=int,
+        default=90,
+        help="Minimum inactive gap in days to classify as an account dormancy period (default: 90).",
     )
     parser.add_argument(
         "--with-nitter",
@@ -54,6 +80,30 @@ def build_parser() -> argparse.ArgumentParser:
         help="Nitter instance base URL to use with --with-nitter.",
     )
     parser.add_argument(
+        "--check-email",
+        type=str,
+        default=None,
+        help="Verify if an email address is registered on X using zero-auth registration API.",
+    )
+    parser.add_argument(
+        "--check-username",
+        type=str,
+        default=None,
+        help="Check if an X handle is taken or available using zero-auth registration API.",
+    )
+    parser.add_argument(
+        "--resolve-media",
+        type=str,
+        default=None,
+        help="Upgrade a Twitter image/avatar/banner URL to its maximum original resolution.",
+    )
+    parser.add_argument(
+        "--clean-url",
+        type=str,
+        default=None,
+        help="Strip Twitter tracking parameters (?s=..., &t=...) from a URL.",
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="Emit machine-readable JSON instead of a human-readable summary.",
@@ -64,6 +114,67 @@ def build_parser() -> argparse.ArgumentParser:
 def run(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    # 1. Utility: Zero-auth email registration check
+    if args.check_email:
+        res = check_email_registered(args.check_email)
+        if args.json:
+            print(json.dumps(res, indent=2))
+        else:
+            status_str = "REGISTERED / TAKEN" if res["registered"] else "NOT REGISTERED / AVAILABLE"
+            if res.get("error"):
+                status_str = f"ERROR ({res['error']})"
+            print(f"Email:        {res['email']}")
+            print(f"Status:       {status_str}")
+            if res.get("msg"):
+                print(f"Message:      {res['msg']}")
+        return 0 if not res.get("error") else 1
+
+    # 2. Utility: Zero-auth username availability check
+    if args.check_username:
+        res = check_username_available(args.check_username)
+        if args.json:
+            print(json.dumps(res, indent=2))
+        else:
+            status_str = "TAKEN" if res["taken"] else "AVAILABLE"
+            if res.get("error"):
+                status_str = f"ERROR ({res['error']})"
+            print(f"Username:     @{res['username']}")
+            print(f"Status:       {status_str}")
+            if res.get("msg"):
+                print(f"Message:      {res['msg']}")
+        return 0 if not res.get("error") else 1
+
+    # 3. Utility: Media URL resolution
+    if args.resolve_media:
+        url = args.resolve_media
+        if "/profile_images/" in url:
+            orig = resolve_avatar_orig(url)
+        elif "/profile_banners/" in url:
+            orig = resolve_banner_orig(url)
+        else:
+            orig = resolve_orig_image_url(url)
+        cleaned = clean_tracking_params(orig)
+        if args.json:
+            print(json.dumps({"input_url": url, "resolved_url": cleaned}, indent=2))
+        else:
+            print(f"Original: {url}")
+            print(f"Resolved: {cleaned}")
+        return 0
+
+    # 4. Utility: Clean tracking URL
+    if args.clean_url:
+        cleaned = clean_tracking_params(args.clean_url)
+        if args.json:
+            print(json.dumps({"input_url": args.clean_url, "cleaned_url": cleaned}, indent=2))
+        else:
+            print(cleaned)
+        return 0
+
+    # Require screen_name for excavation
+    if not args.screen_name:
+        parser.print_help(sys.stderr)
+        return 1
 
     try:
         wayback_ids = fetch_archived_status_ids(
@@ -83,7 +194,13 @@ def run(argv: list[str] | None = None) -> int:
         id_sets.append(nitter_ids)
         labels.append(f"nitter:{args.nitter_instance}")
 
-    report = build_report(args.screen_name, *id_sets, source_labels=labels)
+    report = build_report(
+        args.screen_name,
+        *id_sets,
+        source_labels=labels,
+        include_profile=args.profile,
+        dormancy_threshold_days=args.dormancy_days,
+    )
 
     if report.earliest_id is None:
         if args.json:
@@ -100,11 +217,23 @@ def run(argv: list[str] | None = None) -> int:
         print(json.dumps(report.to_dict(), indent=2))
     else:
         print(f"@{args.screen_name} — verified earliest archived activity")
-        print(f"  Date (UTC):     {report.earliest_datetime.isoformat()}")
-        print(f"  Status ID:      {report.earliest_id}")
-        print(f"  URL:            {report.earliest_url}")
+        print(f"  Date (UTC):      {report.earliest_datetime.isoformat()}")
+        print(f"  Status ID:       {report.earliest_id}")
+        print(f"  URL:             {report.earliest_url}")
         print(f"  Total IDs found: {report.total_unique_ids}")
         print(f"  Sources used:    {', '.join(report.sources_used)}")
+
+        if report.activity_profile is not None:
+            prof = report.activity_profile
+            print("\n  Offline Behavioral & Circadian Profile:")
+            print(f"    Active Timespan:      {prof.timespan_days} days ({prof.first_status_utc} to {prof.last_status_utc})")
+            print(f"    Estimated Timezone:   {prof.estimated_timezone_label}")
+            print(f"    Sleep Trough (UTC):   {prof.quiescent_trough_utc[0]:02d}:00 – {prof.quiescent_trough_utc[1]:02d}:00 UTC ({prof.quiescent_percentage}% activity)")
+            if prof.dormancy_periods:
+                print(f"    Dormancy Gaps (>{args.dormancy_days}d): {len(prof.dormancy_periods)} period(s) detected")
+                for gap in prof.dormancy_periods:
+                    print(f"      • {gap.gap_days} days inactive: {gap.start_datetime_utc[:10]} -> {gap.end_datetime_utc[:10]}")
+
         print()
         print(
             "  Note: this is the earliest activity any checked archive has "
