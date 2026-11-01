@@ -1,8 +1,8 @@
-"""Unit tests for x_archaeologist.media (resolution enhancement, tracking cleanup)."""
+"""Unit tests for x_arch.media (resolution enhancement, tracking cleanup)."""
 
 from __future__ import annotations
 
-from x_archaeologist.media import (
+from x_arch.media import (
     clean_tracking_params,
     resolve_avatar_orig,
     resolve_banner_orig,

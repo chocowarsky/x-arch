@@ -1,4 +1,4 @@
-"""Unit tests for x_archaeologist.identity (zero-auth registration check & base64 decoding)."""
+"""Unit tests for x_arch.identity (zero-auth registration check & base64 decoding)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import json
 import httpx
 import pytest
 
-from x_archaeologist.identity import (
+from x_arch.identity import (
     check_email_registered,
     check_username_available,
     decode_base64_user_id,

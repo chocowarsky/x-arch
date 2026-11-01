@@ -1,4 +1,4 @@
-"""Tests for x_archaeologist.cli — end-to-end with mocked HTTP."""
+"""Tests for x_arch.cli — end-to-end with mocked HTTP."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import json
 import httpx
 import pytest
 
-from x_archaeologist import cli
+from x_arch import cli
 
 SAMPLE_CDX_RESPONSE = [
     ["timestamp", "original", "statuscode"],

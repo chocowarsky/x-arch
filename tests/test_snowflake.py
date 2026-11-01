@@ -1,4 +1,4 @@
-"""Tests for x_archaeologist.snowflake — pure math, no network."""
+"""Tests for x_arch.snowflake — pure math, no network."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import datetime as dt
 
 import pytest
 
-from x_archaeologist.snowflake import (
+from x_arch.snowflake import (
     TWITTER_EPOCH_MS,
     snowflake_to_datetime,
     sort_ids_chronologically,

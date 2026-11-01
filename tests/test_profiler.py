@@ -1,10 +1,10 @@
-"""Unit tests for x_archaeologist.profiler (circadian rhythms, timezone estimation, dormancy)."""
+"""Unit tests for x_arch.profiler (circadian rhythms, timezone estimation, dormancy)."""
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from x_archaeologist.profiler import (
+from x_arch.profiler import (
     compute_hourly_distribution,
     compute_weekday_distribution,
     detect_dormancy_periods,
@@ -12,7 +12,7 @@ from x_archaeologist.profiler import (
     estimate_timezone_from_trough,
     profile_activity,
 )
-from x_archaeologist.snowflake import TWITTER_EPOCH_MS
+from x_arch.snowflake import TWITTER_EPOCH_MS
 
 
 def _make_snowflake(dt: datetime) -> int:

@@ -1,4 +1,4 @@
-"""Tests for x_archaeologist.wayback — mocked HTTP, no live network calls."""
+"""Tests for x_arch.wayback — mocked HTTP, no live network calls."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import json
 import httpx
 import pytest
 
-from x_archaeologist.wayback import (
+from x_arch.wayback import (
     WaybackError,
     fetch_archived_status_ids,
     fetch_cdx_rows,

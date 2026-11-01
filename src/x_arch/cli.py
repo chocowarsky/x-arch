@@ -1,12 +1,12 @@
-"""Command-line interface for x-archaeologist.
+"""Command-line interface for x-arch.
 
 Usage:
-    x-archaeologist bevanpramudt
-    x-archaeologist bevanpramudt --profile
-    x-archaeologist bevanpramudt --from-year 2018 --json
-    x-archaeologist bevanpramudt --with-nitter --nitter-instance https://your-instance.example
-    x-archaeologist --check-email user@example.com
-    x-archaeologist --resolve-media "https://pbs.twimg.com/media/F9abcdef?format=jpg&name=small"
+    x-arch bevanpramudt
+    x-arch bevanpramudt --profile
+    x-arch bevanpramudt --from-year 2018 --json
+    x-arch bevanpramudt --with-nitter --nitter-instance https://your-instance.example
+    x-arch --check-email user@example.com
+    x-arch --resolve-media "https://pbs.twimg.com/media/F9abcdef?format=jpg&name=small"
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from .wayback import WaybackError, fetch_archived_status_ids
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="x-archaeologist",
+        prog="x-arch",
         description=(
             "Find the verified earliest archived activity and behavioral intelligence "
             "of an X/Twitter account, cross-checked against independent archives "

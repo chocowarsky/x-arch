@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import sys
 
-from x_archaeologist import build_report, fetch_archived_status_ids
-from x_archaeologist.wayback import WaybackError
+from x_arch import build_report, fetch_archived_status_ids
+from x_arch.wayback import WaybackError
 
 
 def main() -> None:

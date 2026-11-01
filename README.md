@@ -1,10 +1,10 @@
-# x-archaeologist
+# x-arch
 
 **Find the real earliest activity, behavioral rhythms, and uncompressed media of any X/Twitter account — verified against independent archives, not X's own gappy search index.**
 
 ```bash
-pip install x-archaeologist
-x-archaeologist bevanpramudt --profile
+pip install x-arch
+x-arch bevanpramudt --profile
 ```
 ```text
 @bevanpramudt — verified earliest archived activity
@@ -40,7 +40,7 @@ similar GraphQL-replay tools) don't fix this either:
 2. Even with valid session cookies, automated HTTP requests get blocked by Cloudflare's TLS fingerprint check because standard HTTP clients (`httpx`, `requests`) do not match a real browser's BoringSSL handshake.
 3. Official Developer API v2 read access requires expensive enterprise tiers ($100/mo Basic is write-only or capped at 100 req/day).
 
-**x-archaeologist bypasses X's servers entirely for its core archive work.** It queries the
+**x-arch bypasses X's servers entirely for its core archive work.** It queries the
 [Wayback Machine](https://web.archive.org)'s CDX API — a free, independent,
 read-only archive — for every snapshot of `twitter.com/<user>/status/*` it has
 ever crawled, then decodes the real creation timestamp out of each tweet's
@@ -78,10 +78,10 @@ Strips surveillance and tracking parameters (`?s=...`, `&t=...`, `ref_src=...`) 
 ## Install
 
 ```bash
-pip install x-archaeologist
+pip install x-arch
 # or, for local development:
-git clone https://github.com/chocowarsky/x-archaeologist.git
-cd x-archaeologist
+git clone https://github.com/chocowarsky/x-arch.git
+cd x-arch
 pip install -e ".[dev]"
 ```
 
@@ -93,34 +93,34 @@ pip install -e ".[dev]"
 
 ```bash
 # 1. Basic earliest tweet excavation
-x-archaeologist bevanpramudt
+x-arch bevanpramudt
 
 # 2. Complete earliest discovery + offline behavioral profiling
-x-archaeologist bevanpramudt --profile
+x-arch bevanpramudt --profile
 
 # 3. Custom dormancy threshold (e.g. flag gaps >= 180 days)
-x-archaeologist bevanpramudt --profile --dormancy-days 180
+x-arch bevanpramudt --profile --dormancy-days 180
 
 # 4. Narrow the search window (speeds up large accounts)
-x-archaeologist bevanpramudt --from-year 2019 --to-year 2021
+x-arch bevanpramudt --from-year 2019 --to-year 2021
 
 # 5. Machine-readable JSON output
-x-archaeologist bevanpramudt --profile --json
+x-arch bevanpramudt --profile --json
 
 # 6. Resolve media to original lossless resolution
-x-archaeologist --resolve-media "https://pbs.twimg.com/media/F9abcdef?format=jpg&name=small"
+x-arch --resolve-media "https://pbs.twimg.com/media/F9abcdef?format=jpg&name=small"
 
 # 7. Clean tracking parameters from URL
-x-archaeologist --clean-url "https://x.com/bevanpramudt/status/1308986682906152960?s=20&t=aBcDeF"
+x-arch --clean-url "https://x.com/bevanpramudt/status/1308986682906152960?s=20&t=aBcDeF"
 
 # 8. Zero-auth email registration check
-x-archaeologist --check-email user@example.com
+x-arch --check-email user@example.com
 ```
 
 ### Python Library
 
 ```python
-from x_archaeologist import (
+from x_arch import (
     fetch_archived_status_ids,
     build_report,
     profile_activity,
@@ -157,7 +157,7 @@ All unit tests run against mocked HTTP transports (`httpx.MockTransport`) — 10
 
 ## Provenance & Research
 
-Architectural patterns and algorithmic techniques incorporated in `x-archaeologist` were evaluated, empirically tested, and adapted from across 52 open-source X/Twitter research projects:
+Architectural patterns and algorithmic techniques incorporated in `x-arch` were evaluated, empirically tested, and adapted from across 52 open-source X/Twitter research projects:
 - **Offline Circadian Rhythm & Sleep Analysis**: Inspired by `x0rz/tweets_analyzer` and `vaguileradiaz/tinfoleak`.
 - **Lossless Media Extraction**: Inspired by `EltonChou/TwitterMediaHarvest`, `BandarHL/BHTwitter`, and `robertodoering/harpy`.
 - **Zero-Auth Edge Validation**: Inspired by `megadose/holehe` and `fa0311/TwitterInternalAPIDocument`.

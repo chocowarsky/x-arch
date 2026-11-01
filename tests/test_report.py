@@ -1,8 +1,8 @@
-"""Tests for x_archaeologist.report — pure logic, no network."""
+"""Tests for x_arch.report — pure logic, no network."""
 
 from __future__ import annotations
 
-from x_archaeologist.report import build_report
+from x_arch.report import build_report
 
 
 def test_build_report_merges_and_sorts_multiple_sources():
