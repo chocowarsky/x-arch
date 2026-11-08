@@ -19,7 +19,8 @@ from dataclasses import dataclass
 import httpx
 
 CDX_ENDPOINT = "https://web.archive.org/cdx/search/cdx"
-DEFAULT_USER_AGENT = "x-archaeologist/0.1 (+https://github.com/)"
+DEFAULT_DOMAINS: tuple[str, ...] = ("twitter.com", "x.com")
+DEFAULT_USER_AGENT = "x-arch/0.2.0 (+https://github.com/chocowarsky/x-arch)"
 
 
 class WaybackError(RuntimeError):
@@ -41,40 +42,19 @@ def _extract_status_id(url: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
-def fetch_cdx_rows(
+def _fetch_domain_cdx_rows(
+    http_client: httpx.Client,
+    domain: str,
     screen_name: str,
     *,
     from_year: int | None = None,
     to_year: int | None = None,
-    timeout: float = 30.0,
     max_retries: int = 6,
     retry_wait_seconds: float = 8.0,
-    client: httpx.Client | None = None,
 ) -> list[ArchivedSnapshot]:
-    """Fetch every archived `/status/<id>` snapshot the Wayback Machine has
-    for a given account.
-
-    Args:
-        screen_name: The X handle, without ``@``.
-        from_year: Optional lower bound (inclusive) on crawl year.
-        to_year: Optional upper bound (inclusive) on crawl year.
-        timeout: Per-request timeout in seconds.
-        max_retries: How many times to retry on transient
-            "Temporarily Offline" responses before giving up.
-        retry_wait_seconds: Delay between retries.
-        client: Optional pre-configured ``httpx.Client`` (for tests).
-
-    Returns:
-        A list of :class:`ArchivedSnapshot`, one per crawl event. The same
-        tweet is typically crawled multiple times; callers that only need
-        unique tweet IDs should deduplicate (see :func:`fetch_archived_status_ids`).
-
-    Raises:
-        WaybackError: If the CDX API never returns valid JSON within
-            ``max_retries`` attempts.
-    """
-    params = {
-        "url": f"twitter.com/{screen_name}/status/*",
+    """Fetch CDX rows for a single domain (e.g. twitter.com or x.com)."""
+    params: dict[str, str] = {
+        "url": f"{domain}/{screen_name}/status/*",
         "output": "json",
         "fl": "timestamp,original,statuscode",
     }
@@ -83,42 +63,126 @@ def fetch_cdx_rows(
     if to_year:
         params["to"] = str(to_year)
 
+    last_error: Exception | None = None
+    data: list[list[str]] | None = None
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = http_client.get(CDX_ENDPOINT, params=params)
+            response.raise_for_status()
+            data = json.loads(response.text)
+            break
+        except (httpx.HTTPError, json.JSONDecodeError) as exc:
+            last_error = exc
+            if attempt < max_retries:
+                time.sleep(retry_wait_seconds)
+            continue
+    else:
+        raise WaybackError(
+            f"Wayback CDX API did not return valid data after "
+            f"{max_retries} attempts for '{screen_name}' on {domain}. "
+            f"The archive is likely experiencing an outage — retry later. "
+            f"Last error: {last_error}"
+        )
+
+    if not isinstance(data, list) or len(data) == 0:
+        return []
+
+    if data[0] != ["timestamp", "original", "statuscode"]:
+        return []
+
+    snapshots: list[ArchivedSnapshot] = []
+    for row in data[1:]:
+        if not isinstance(row, list) or len(row) < 3:
+            continue
+        ts = str(row[0]) if row[0] is not None else ""
+        url = str(row[1]) if row[1] is not None else ""
+        status = str(row[2]) if row[2] is not None else ""
+        snapshots.append(ArchivedSnapshot(timestamp=ts, original_url=url, status_code=status))
+    return snapshots
+
+
+def fetch_cdx_rows(
+    screen_name: str,
+    *,
+    from_year: int | None = None,
+    to_year: int | None = None,
+    timeout: float = 30.0,
+    max_retries: int = 6,
+    retry_wait_seconds: float = 8.0,
+    domains: tuple[str, ...] = DEFAULT_DOMAINS,
+    client: httpx.Client | None = None,
+) -> list[ArchivedSnapshot]:
+    """Fetch every archived `/status/<id>` snapshot the Wayback Machine has
+    for a given account across both legacy (twitter.com) and post-rebrand (x.com) domains.
+
+    Args:
+        screen_name: The X handle, with or without ``@``.
+        from_year: Optional lower bound (inclusive) on crawl year.
+        to_year: Optional upper bound (inclusive) on crawl year.
+        timeout: Per-request timeout in seconds.
+        max_retries: How many times to retry on transient
+            "Temporarily Offline" responses before giving up per domain.
+        retry_wait_seconds: Delay between retries.
+        domains: Domains to query for status URLs (default: twitter.com and x.com).
+        client: Optional pre-configured ``httpx.Client`` (for tests).
+
+    Returns:
+        A list of :class:`ArchivedSnapshot`, one per crawl event, sorted
+        chronologically ascending. Deduplicated by (timestamp, original_url).
+
+    Raises:
+        WaybackError: If the CDX API fails on all requested domains.
+    """
+    clean_name = screen_name.lstrip("@").strip()
+    if not clean_name:
+        return []
+
     owns_client = client is None
     http_client = client or httpx.Client(
         timeout=timeout, headers={"User-Agent": DEFAULT_USER_AGENT}
     )
 
+    all_snapshots: list[ArchivedSnapshot] = []
+    errors: list[Exception] = []
+
     try:
-        last_error: Exception | None = None
-        for attempt in range(1, max_retries + 1):
+        for domain in domains:
             try:
-                response = http_client.get(CDX_ENDPOINT, params=params)
-                response.raise_for_status()
-                data = json.loads(response.text)
-                break
-            except (httpx.HTTPError, json.JSONDecodeError) as exc:
-                last_error = exc
-                if attempt < max_retries:
-                    time.sleep(retry_wait_seconds)
-                continue
-        else:
+                snapshots = _fetch_domain_cdx_rows(
+                    http_client,
+                    domain,
+                    clean_name,
+                    from_year=from_year,
+                    to_year=to_year,
+                    max_retries=max_retries,
+                    retry_wait_seconds=retry_wait_seconds,
+                )
+                all_snapshots.extend(snapshots)
+            except WaybackError as exc:
+                errors.append(exc)
+
+        if errors and len(errors) == len(domains):
             raise WaybackError(
-                f"Wayback CDX API did not return valid data after "
-                f"{max_retries} attempts for '{screen_name}'. The archive is "
-                f"likely experiencing an outage — retry later. Last error: "
-                f"{last_error}"
+                f"Wayback CDX API failed across all domains for '{clean_name}'. "
+                f"Errors: {'; '.join(str(e) for e in errors)}"
             )
     finally:
         if owns_client:
             http_client.close()
 
-    if not data or data[0] != ["timestamp", "original", "statuscode"]:
-        return []
+    # Deduplicate snapshots across crawls & domains
+    seen: set[tuple[str, str]] = set()
+    deduped: list[ArchivedSnapshot] = []
+    for snapshot in all_snapshots:
+        key = (snapshot.timestamp, snapshot.original_url)
+        if key not in seen:
+            seen.add(key)
+            deduped.append(snapshot)
 
-    return [
-        ArchivedSnapshot(timestamp=row[0], original_url=row[1], status_code=row[2])
-        for row in data[1:]
-    ]
+    # Sort chronologically by timestamp
+    deduped.sort(key=lambda s: s.timestamp)
+    return deduped
 
 
 def fetch_archived_status_ids(
@@ -126,6 +190,7 @@ def fetch_archived_status_ids(
     *,
     from_year: int | None = None,
     to_year: int | None = None,
+    domains: tuple[str, ...] = DEFAULT_DOMAINS,
     **kwargs,
 ) -> set[int]:
     """Convenience wrapper: return the set of unique numeric status IDs the
@@ -133,7 +198,16 @@ def fetch_archived_status_ids(
 
     See :func:`fetch_cdx_rows` for parameters.
     """
-    rows = fetch_cdx_rows(screen_name, from_year=from_year, to_year=to_year, **kwargs)
+    clean_name = screen_name.lstrip("@").strip()
+    if not clean_name:
+        return set()
+    rows = fetch_cdx_rows(
+        clean_name,
+        from_year=from_year,
+        to_year=to_year,
+        domains=domains,
+        **kwargs,
+    )
     ids: set[int] = set()
     for row in rows:
         status_id = _extract_status_id(row.original_url)

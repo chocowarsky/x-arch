@@ -75,8 +75,60 @@ def test_transient_outage_retries_then_succeeds():
         "bevanpramudt", client=client, max_retries=5, retry_wait_seconds=0
     )
 
-    assert call_count["n"] == 3
+    # 3 attempts for twitter.com (2 transient errors + 1 success) + 1 attempt for x.com
+    assert call_count["n"] == 4
     assert len(rows) == 3
+
+
+def test_fetch_cdx_rows_searches_both_twitter_and_x_domains():
+    queried_urls: list[str] = []
+
+    sample_x_response = [
+        ["timestamp", "original", "statuscode"],
+        ["20230924120000", "https://x.com/bevanpramudt/status/1700000000000000000", "200"],
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url_param = request.url.params.get("url", "")
+        queried_urls.append(url_param)
+        if "twitter.com" in url_param:
+            return httpx.Response(200, text=json.dumps(SAMPLE_CDX_RESPONSE))
+        else:
+            return httpx.Response(200, text=json.dumps(sample_x_response))
+
+    transport = httpx.MockTransport(handler)
+    client = httpx.Client(transport=transport)
+
+    rows = fetch_cdx_rows("@bevanpramudt", client=client)
+
+    # Should query both twitter.com and x.com without @ prefix
+    assert "twitter.com/bevanpramudt/status/*" in queried_urls
+    assert "x.com/bevanpramudt/status/*" in queried_urls
+    # 3 from twitter.com + 1 from x.com = 4 total snapshots
+    assert len(rows) == 4
+    assert any("x.com/bevanpramudt/status/1700000000000000000" in r.original_url for r in rows)
+
+
+def test_fetch_archived_status_ids_merges_twitter_and_x_ids():
+    sample_x_response = [
+        ["timestamp", "original", "statuscode"],
+        ["20230924120000", "https://x.com/bevanpramudt/status/1700000000000000000", "200"],
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url_param = request.url.params.get("url", "")
+        if "twitter.com" in url_param:
+            return httpx.Response(200, text=json.dumps(SAMPLE_CDX_RESPONSE))
+        return httpx.Response(200, text=json.dumps(sample_x_response))
+
+    transport = httpx.MockTransport(handler)
+    client = httpx.Client(transport=transport)
+
+    ids = fetch_archived_status_ids("bevanpramudt", client=client)
+    assert 1308986682906152960 in ids
+    assert 1309091545048584193 in ids
+    assert 1700000000000000000 in ids
+    assert len(ids) == 3
 
 
 def test_persistent_outage_raises_wayback_error():

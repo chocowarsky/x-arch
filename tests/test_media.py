@@ -70,3 +70,91 @@ def test_clean_tracking_params():
     assert cleaned == "https://x.com/bevanpramudt/status/1308986682906152960"
     assert "s=" not in cleaned
     assert "t=" not in cleaned
+
+
+def test_resolve_orig_image_already_orig():
+    url = "https://pbs.twimg.com/media/F9abcdef.jpg:orig"
+    assert resolve_orig_image_url(url) == url
+
+    url_query = "https://pbs.twimg.com/media/F9abcdef?format=png&name=orig"
+    assert resolve_orig_image_url(url_query) == url_query
+
+
+def test_extract_media_from_status_rest_payload():
+    from x_arch.media import extract_media_from_status
+
+    status_payload = {
+        "id_str": "1234567890",
+        "extended_entities": {
+            "media": [
+                {
+                    "id_str": "101",
+                    "type": "photo",
+                    "media_url_https": "https://pbs.twimg.com/media/photo1.jpg:large",
+                },
+                {
+                    "id_str": "102",
+                    "type": "video",
+                    "media_url_https": "https://pbs.twimg.com/media/thumb.jpg",
+                    "video_info": {
+                        "variants": [
+                            {"content_type": "application/x-mpegURL", "url": "https://video.twimg.com/playlist.m3u8"},
+                            {"content_type": "video/mp4", "bitrate": 500000, "url": "https://video.twimg.com/low.mp4?s=20"},
+                            {"content_type": "video/mp4", "bitrate": 2000000, "url": "https://video.twimg.com/high.mp4?ref_src=twsrc"},
+                        ]
+                    },
+                },
+            ]
+        },
+    }
+
+    media_items = extract_media_from_status(status_payload)
+    assert len(media_items) == 2
+
+    # Photo item
+    assert media_items[0]["id"] == "101"
+    assert media_items[0]["type"] == "photo"
+    assert media_items[0]["url"] == "https://pbs.twimg.com/media/photo1.jpg:orig"
+
+    # Video item
+    assert media_items[1]["id"] == "102"
+    assert media_items[1]["type"] == "video"
+    assert media_items[1]["bitrate"] == 2000000
+    assert media_items[1]["url"] == "https://video.twimg.com/high.mp4"
+    assert "ref_src" not in media_items[1]["url"]  # Tracking cleaned
+
+
+def test_extract_media_from_status_graphql_payload():
+    from x_arch.media import extract_media_from_status
+
+    graphql_payload = {
+        "data": {
+            "tweetResult": {
+                "result": {
+                    "legacy": {
+                        "extended_entities": {
+                            "media": [
+                                {
+                                    "id_str": "999",
+                                    "type": "photo",
+                                    "media_url_https": "https://pbs.twimg.com/media/gql_photo?format=jpg&name=medium",
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    media_items = extract_media_from_status(graphql_payload)
+    assert len(media_items) == 1
+    assert media_items[0]["id"] == "999"
+    assert "name=orig" in media_items[0]["url"]
+
+
+def test_extract_media_from_status_empty():
+    from x_arch.media import extract_media_from_status
+
+    assert extract_media_from_status({}) == []
+    assert extract_media_from_status({"entities": {}}) == []

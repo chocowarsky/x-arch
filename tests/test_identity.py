@@ -90,3 +90,67 @@ def test_check_username_available():
     assert res["username"] == "bevanpramudt"
     assert res["taken"] is True
     assert res["valid"] is False
+
+
+def test_cloudflare_challenge_detected():
+    # Cloudflare challenge returning 403 or 200 with challenge HTML
+    def mock_cf_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            403,
+            headers={"cf-ray": "1234567890abcdef-SIN", "content-type": "text/html"},
+            text="<html><title>Just a moment...</title><body>Checking your browser before accessing Twitter.</body></html>",
+        )
+
+    transport = httpx.MockTransport(mock_cf_handler)
+    client = httpx.Client(transport=transport)
+
+    res_email = check_email_registered("test@example.com", client=client)
+    assert res_email["error"] is not None
+    assert "Cloudflare" in res_email["error"]
+
+    res_user = check_username_available("bevanpramudt", client=client)
+    assert res_user["error"] is not None
+    assert "Cloudflare" in res_user["error"]
+
+
+def test_unexpected_html_detected():
+    def mock_html_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/html; charset=utf-8"},
+            text="<!DOCTYPE html><html><body>Login redirect</body></html>",
+        )
+
+    transport = httpx.MockTransport(mock_html_handler)
+    client = httpx.Client(transport=transport)
+
+    res = check_username_available("bevanpramudt", client=client)
+    assert res["error"] is not None
+    assert "HTML" in res["error"]
+
+
+def test_twitter_api_error_payload_handled_without_false_positive():
+    # Twitter returns JSON with errors field
+    def mock_error_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            text=json.dumps({"errors": [{"message": "Internal error occurred", "code": 131}]}),
+        )
+
+    transport = httpx.MockTransport(mock_error_handler)
+    client = httpx.Client(transport=transport)
+
+    res = check_username_available("bevanpramudt", client=client)
+    assert res["error"] is not None
+    assert "Twitter API error: Internal error occurred" in res["error"]
+    assert res["taken"] is False
+
+
+def test_invalid_input_validation():
+    res_bad_email = check_email_registered("not-an-email")
+    assert res_bad_email["valid"] is False
+    assert "Invalid email" in res_bad_email["error"]
+
+    res_empty_user = check_username_available("")
+    assert res_empty_user["valid"] is False
+    assert "cannot be empty" in res_empty_user["error"]

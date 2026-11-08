@@ -88,16 +88,17 @@ def detect_quiescent_trough(
     Returns:
         (start_hour_utc, end_hour_utc, percentage_of_total_tweets)
     """
-    total = sum(hourly_counts.values())
-    if total == 0:
-        return (0, window_hours, 0.0)
+    counts = {h: hourly_counts.get(h, 0) for h in range(24)}
+    total = sum(counts.values())
+    if total == 0 or window_hours <= 0:
+        return (0, max(0, window_hours), 0.0)
 
     best_start = 0
     min_count = float("inf")
 
     # Hourly counts form a 24-hour circular ring
     for start_h in range(24):
-        window_sum = sum(hourly_counts[(start_h + i) % 24] for i in range(window_hours))
+        window_sum = sum(counts[(start_h + i) % 24] for i in range(window_hours))
         if window_sum < min_count:
             min_count = window_sum
             best_start = start_h
@@ -108,7 +109,7 @@ def detect_quiescent_trough(
 
 
 def estimate_timezone_from_trough(
-    start_trough_utc: int, window_hours: int = 6
+    start_trough_utc: int, window_hours: int = 6, quiescent_pct: float | None = None
 ) -> tuple[int, str]:
     """Deduce probable UTC offset assuming typical human sleep from ~01:00 to ~07:00 local time.
 
@@ -117,6 +118,11 @@ def estimate_timezone_from_trough(
     => offset = 1 - start_trough_utc
     Normalized to range [-12, +14].
     """
+    # Detect uniform / 24-7 automated bot distributions
+    expected_uniform = (window_hours / 24.0) * 100.0
+    if quiescent_pct is not None and quiescent_pct >= (expected_uniform - 3.0):
+        return (0, "UTC+0 (Uniform / 24-7 Activity / Bot - No Clear Sleep Trough)")
+
     # Target sleep onset anchor ~ 01:00 local time
     raw_offset = 1 - start_trough_utc
 
@@ -150,6 +156,8 @@ def detect_dormancy_periods(
     sorted_ids: Sequence[int], threshold_days: int = 90
 ) -> list[DormancyPeriod]:
     """Find gaps between chronologically consecutive tweets exceeding `threshold_days`."""
+    if threshold_days <= 0:
+        raise ValueError(f"threshold_days must be positive, got {threshold_days}")
     if len(sorted_ids) < 2:
         return []
 
@@ -202,7 +210,9 @@ def profile_activity(
     hourly = compute_hourly_distribution(dts)
     daily = compute_weekday_distribution(dts)
     trough_start, trough_end, trough_pct = detect_quiescent_trough(hourly, window_hours=6)
-    offset, tz_label = estimate_timezone_from_trough(trough_start, window_hours=6)
+    offset, tz_label = estimate_timezone_from_trough(
+        trough_start, window_hours=6, quiescent_pct=trough_pct
+    )
     dormancies = detect_dormancy_periods(sorted_ids, threshold_days=dormancy_threshold_days)
 
     return ActivityProfile(

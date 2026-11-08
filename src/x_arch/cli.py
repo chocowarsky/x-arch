@@ -18,6 +18,7 @@ import sys
 from .identity import check_email_registered, check_username_available
 from .media import (
     clean_tracking_params,
+    extract_media_from_status,
     resolve_avatar_orig,
     resolve_banner_orig,
     resolve_orig_image_url,
@@ -76,8 +77,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--nitter-instance",
-        default="https://nitter.net",
-        help="Nitter instance base URL to use with --with-nitter.",
+        default=None,
+        help="Nitter instance base URL to use with --with-nitter (defaults to healthy community mirrors).",
     )
     parser.add_argument(
         "--check-email",
@@ -145,9 +146,35 @@ def run(argv: list[str] | None = None) -> int:
                 print(f"Message:      {res['msg']}")
         return 0 if not res.get("error") else 1
 
-    # 3. Utility: Media URL resolution
+    # 3. Utility: Media URL resolution & payload extraction
     if args.resolve_media:
-        url = args.resolve_media
+        target = args.resolve_media.strip()
+        # Check if argument is a JSON payload or JSON file
+        payload: dict | None = None
+        if target.startswith("{") and target.endswith("}"):
+            try:
+                payload = json.loads(target)
+            except Exception:
+                pass
+        elif target.endswith(".json"):
+            try:
+                with open(target, encoding="utf-8") as f:
+                    payload = json.load(f)
+            except Exception:
+                pass
+
+        if payload is not None:
+            extracted = extract_media_from_status(payload)
+            if args.json:
+                print(json.dumps(extracted, indent=2))
+            else:
+                print(f"Extracted {len(extracted)} media items:")
+                for m in extracted:
+                    bitrate_info = f" ({m['bitrate']} bps)" if m.get("bitrate") else ""
+                    print(f"  • [{m['type'].upper()}{bitrate_info}] {m['url']}")
+            return 0
+
+        url = target
         if "/profile_images/" in url:
             orig = resolve_avatar_orig(url)
         elif "/profile_banners/" in url:
@@ -176,9 +203,14 @@ def run(argv: list[str] | None = None) -> int:
         parser.print_help(sys.stderr)
         return 1
 
+    clean_screen_name = args.screen_name.lstrip("@").strip()
+    if not clean_screen_name:
+        print("error: screen_name cannot be empty or solely '@'", file=sys.stderr)
+        return 1
+
     try:
         wayback_ids = fetch_archived_status_ids(
-            args.screen_name, from_year=args.from_year, to_year=args.to_year
+            clean_screen_name, from_year=args.from_year, to_year=args.to_year
         )
     except WaybackError as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -189,13 +221,14 @@ def run(argv: list[str] | None = None) -> int:
 
     if args.with_nitter:
         nitter_ids = fetch_nitter_timeline_ids(
-            args.screen_name, instance=args.nitter_instance
+            clean_screen_name, instance=args.nitter_instance
         )
         id_sets.append(nitter_ids)
-        labels.append(f"nitter:{args.nitter_instance}")
+        inst_label = args.nitter_instance or "fallback_mirrors"
+        labels.append(f"nitter:{inst_label}")
 
     report = build_report(
-        args.screen_name,
+        clean_screen_name,
         *id_sets,
         source_labels=labels,
         include_profile=args.profile,

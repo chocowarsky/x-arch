@@ -17,6 +17,7 @@ from .identity import (
 )
 from .media import (
     clean_tracking_params,
+    extract_media_from_status,
     resolve_avatar_orig,
     resolve_banner_orig,
     resolve_orig_image_url,
@@ -63,6 +64,7 @@ __all__ = [
     "resolve_banner_orig",
     "select_highest_bitrate_video",
     "clean_tracking_params",
+    "extract_media_from_status",
     # Identity & Registration
     "check_email_registered",
     "check_username_available",

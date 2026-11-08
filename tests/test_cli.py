@@ -91,3 +91,40 @@ def test_cli_clean_url(capsys):
     assert exit_code == 0
     assert "s=" not in captured.out
     assert "t=" not in captured.out
+
+
+def test_cli_handles_at_prefix(capsys):
+    exit_code = cli.run(["@bevanpramudt", "--json"])
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    payload = json.loads(captured.out)
+    assert payload["screen_name"] == "bevanpramudt"
+
+
+def test_cli_resolve_media_json_payload(capsys):
+    payload = {
+        "extended_entities": {
+            "media": [
+                {
+                    "id_str": "123",
+                    "type": "photo",
+                    "media_url_https": "https://pbs.twimg.com/media/pic.jpg:large",
+                }
+            ]
+        }
+    }
+    exit_code = cli.run(["--resolve-media", json.dumps(payload), "--json"])
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    res = json.loads(captured.out)
+    assert len(res) == 1
+    assert res[0]["url"] == "https://pbs.twimg.com/media/pic.jpg:orig"
+
+
+def test_cli_with_nitter_flag(monkeypatch, capsys):
+    monkeypatch.setattr(cli, "fetch_nitter_timeline_ids", lambda *a, **kw: {999999999})
+    exit_code = cli.run(["bevanpramudt", "--with-nitter", "--json"])
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    payload = json.loads(captured.out)
+    assert any("nitter" in s for s in payload["sources_used"])

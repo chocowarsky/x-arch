@@ -36,7 +36,16 @@ def snowflake_to_datetime(snowflake_id: int | str) -> _dt.datetime:
             decodes to a timestamp before the Snowflake epoch (meaning it is
             not actually a Snowflake ID — e.g. a pre-Snowflake legacy ID).
     """
-    sid = int(snowflake_id)
+    if isinstance(snowflake_id, bool):
+        raise ValueError(f"Snowflake ID cannot be boolean, got {snowflake_id!r}")
+    if snowflake_id is None:
+        raise ValueError("Snowflake ID cannot be None")
+
+    try:
+        sid = int(snowflake_id)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid Snowflake ID: {snowflake_id!r}") from exc
+
     if sid < 0:
         raise ValueError(f"Snowflake ID must be non-negative, got {sid}")
 
@@ -46,7 +55,10 @@ def snowflake_to_datetime(snowflake_id: int | str) -> _dt.datetime:
             f"ID {sid} decodes before the Snowflake epoch — it is likely a "
             "legacy pre-2010 ID, not a true Snowflake ID."
         )
-    return _dt.datetime.fromtimestamp(milliseconds / 1000, tz=_dt.timezone.utc)
+    try:
+        return _dt.datetime.fromtimestamp(milliseconds / 1000, tz=_dt.timezone.utc)
+    except (OverflowError, OSError, ValueError) as exc:
+        raise ValueError(f"Snowflake ID {sid} timestamp out of representable date range") from exc
 
 
 def sort_ids_chronologically(ids: "set[int] | list[int]") -> list[int]:
@@ -54,4 +66,14 @@ def sort_ids_chronologically(ids: "set[int] | list[int]") -> list[int]:
     creation time, numeric sort IS chronological sort. No decoding needed for
     ordering; decoding is only needed to render a human-readable timestamp.
     """
-    return sorted(set(int(i) for i in ids))
+    clean_ids: set[int] = set()
+    for i in ids:
+        if isinstance(i, bool) or i is None:
+            continue
+        try:
+            val = int(i)
+            if val >= 0:
+                clean_ids.add(val)
+        except (ValueError, TypeError):
+            continue
+    return sorted(clean_ids)

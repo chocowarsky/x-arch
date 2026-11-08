@@ -11,6 +11,8 @@ Derived from proven techniques in:
 from __future__ import annotations
 
 import base64
+import binascii
+import json
 import re
 from typing import Any
 
@@ -28,6 +30,35 @@ DEFAULT_HEADERS = {
     ),
     "Accept": "application/json",
 }
+
+
+def _detect_edge_block(resp: httpx.Response) -> str | None:
+    """Detect if response is a Cloudflare/WAF block, bot challenge, or unexpected HTML page."""
+    content_type = resp.headers.get("content-type", "").lower()
+    text_sample = resp.text[:1200].lower()
+
+    # Cloudflare challenge indicators: specific challenge markers or error status with cf-ray
+    has_cf_challenge = (
+        "just a moment" in text_sample
+        or "challenge-platform" in text_sample
+        or "turnstile" in text_sample
+        or "attention required! | cloudflare" in text_sample
+        or ("cloudflare" in text_sample and resp.status_code in (403, 429, 503))
+        or ("cf-ray" in resp.headers and resp.status_code in (403, 429))
+    )
+    if has_cf_challenge:
+        return (
+            f"Cloudflare / Bot protection challenge encountered on Twitter edge (HTTP {resp.status_code})."
+        )
+
+    is_html = (
+        "text/html" in content_type
+        or text_sample.strip().startswith(("<!doctype html", "<html", "<head", "<body"))
+    )
+    if is_html:
+        return f"Unexpected HTML response from Twitter edge (HTTP {resp.status_code})."
+
+    return None
 
 
 def check_email_registered(
@@ -53,6 +84,11 @@ def check_email_registered(
         "error": None,
     }
 
+    if not email_clean or "@" not in email_clean or "." not in email_clean.split("@")[-1]:
+        result["valid"] = False
+        result["error"] = "Invalid email address format."
+        return result
+
     own_client = client is None
     c = client or httpx.Client(headers=DEFAULT_HEADERS, timeout=10.0)
 
@@ -63,11 +99,33 @@ def check_email_registered(
             result["msg"] = "Rate limited"
             return result
 
+        block_err = _detect_edge_block(resp)
+        if block_err:
+            result["error"] = block_err
+            return result
+
         if resp.status_code != 200:
             result["error"] = f"Twitter returned HTTP status {resp.status_code}."
             return result
 
-        data = resp.json()
+        try:
+            data = resp.json()
+        except (json.JSONDecodeError, ValueError) as exc:
+            result["error"] = f"Failed to parse response: non-JSON payload from Twitter edge ({exc})"
+            return result
+
+        if not isinstance(data, dict):
+            result["error"] = "Unexpected response structure from Twitter edge."
+            return result
+
+        if "errors" in data or "error" in data:
+            if "errors" in data and isinstance(data["errors"], list) and data["errors"]:
+                err_msg = data["errors"][0].get("message", "Unknown API error")
+            else:
+                err_msg = str(data.get("error", "Unknown API error"))
+            result["error"] = f"Twitter API error: {err_msg}"
+            return result
+
         taken = bool(data.get("taken", False))
         valid = bool(data.get("valid", True))
         msg = str(data.get("msg", ""))
@@ -109,6 +167,11 @@ def check_username_available(
         "error": None,
     }
 
+    if not clean_name:
+        result["valid"] = False
+        result["error"] = "Username cannot be empty."
+        return result
+
     own_client = client is None
     c = client or httpx.Client(headers=DEFAULT_HEADERS, timeout=10.0)
 
@@ -119,18 +182,44 @@ def check_username_available(
             result["msg"] = "Rate limited"
             return result
 
+        block_err = _detect_edge_block(resp)
+        if block_err:
+            result["error"] = block_err
+            return result
+
         if resp.status_code != 200:
             result["error"] = f"Twitter returned HTTP status {resp.status_code}."
             return result
 
-        data = resp.json()
+        try:
+            data = resp.json()
+        except (json.JSONDecodeError, ValueError) as exc:
+            result["error"] = f"Failed to parse response: non-JSON payload from Twitter edge ({exc})"
+            return result
+
+        if not isinstance(data, dict):
+            result["error"] = "Unexpected response structure from Twitter edge."
+            return result
+
+        if "errors" in data or "error" in data:
+            if "errors" in data and isinstance(data["errors"], list) and data["errors"]:
+                err_msg = data["errors"][0].get("message", "Unknown API error")
+            else:
+                err_msg = str(data.get("error", "Unknown API error"))
+            result["error"] = f"Twitter API error: {err_msg}"
+            return result
+
         valid = bool(data.get("valid", False))
         msg = str(data.get("msg", ""))
         desc = str(data.get("desc", ""))
 
-        # On username_available: if valid is False and msg indicates taken
-        # E.g. {"valid": false, "msg": "Username has already been taken"}
-        taken = not valid or "taken" in msg.lower() or "taken" in desc.lower()
+        msg_lower = (msg + " " + desc).lower()
+        taken = not valid and (
+            "taken" in msg_lower
+            or "already" in msg_lower
+            or "in use" in msg_lower
+            or bool(data.get("taken", False))
+        )
 
         result["taken"] = taken
         result["valid"] = valid
@@ -153,7 +242,7 @@ def decode_base64_user_id(b64_str: str) -> int | None:
     Example:
         'VXNlcjoxMzA2MTE0MDIyODg2OTczNDQw' -> 'User:1306114022886973440' -> 1306114022886973440
     """
-    if not b64_str:
+    if not b64_str or not isinstance(b64_str, str):
         return None
 
     try:
@@ -162,7 +251,7 @@ def decode_base64_user_id(b64_str: str) -> int | None:
         if missing_padding:
             b64_str += "=" * (4 - missing_padding)
 
-        decoded = base64.b64decode(b64_str).decode("utf-8", errors="ignore")
+        decoded = base64.b64decode(b64_str, validate=False).decode("utf-8", errors="ignore")
         match = re.search(r"User:(\d+)", decoded)
         if match:
             return int(match.group(1))
@@ -171,7 +260,7 @@ def decode_base64_user_id(b64_str: str) -> int | None:
         if decoded.isdigit():
             return int(decoded)
 
-    except Exception:
+    except (ValueError, binascii.Error, UnicodeDecodeError):
         pass
 
     return None
