@@ -144,17 +144,6 @@ print("Original Image:", orig_image)
 
 ---
 
-## Development & Testing
-
-```bash
-pip install -e ".[dev]"
-pytest
-```
-
-All unit tests run against mocked HTTP transports (`httpx.MockTransport`) — 100% deterministic, zero network flakiness.
-
----
-
 ## Provenance & Research
 
 Architectural patterns and algorithmic techniques incorporated in `x-arch` were evaluated, empirically tested, and adapted from across 52 open-source X/Twitter research projects:
